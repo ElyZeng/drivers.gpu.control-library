@@ -1312,6 +1312,127 @@ ctl_result_t CtlTestFrameGeneration(ctl_device_adapter_handle_t hDevices)
     return Result;
 }
 
+/***************************************************************
+ * @brief
+ * Method to test CTL_3D_FEATURE_PREBUILT_SHADER_DOWNLOAD (pre-compiled /
+ * shader cache download). This feature uses a generic bool type field, so
+ * ValueType must be CTL_PROPERTY_VALUE_TYPE_BOOL and the value is read from
+ * Value.BoolType.Enable.
+ * The test does: GET original -> SET to the opposite value -> GET to verify
+ * the toggle -> restore the original value. Each step reports the exact
+ * return code for diagnostics.
+ * @param hDevices
+ * @return ctl_result_t
+ ***************************************************************/
+ctl_result_t CtlTestPrebuiltShaderDownload(ctl_device_adapter_handle_t hDevices)
+{
+    ctl_result_t Result                   = CTL_RESULT_SUCCESS;
+    ctl_3d_feature_getset_t Get3DProperty = { 0 };
+
+    APP_LOG_INFO("======================Pre-built Shader Download (ShaderCache) test -> Global settings======================");
+
+    if (NULL == hDevices)
+        return Result;
+
+    const char *pAppName = "";
+
+    // ---- Step 1: GET original value ----
+    Get3DProperty.Size                  = sizeof(Get3DProperty);
+    Get3DProperty.FeatureType           = CTL_3D_FEATURE_PREBUILT_SHADER_DOWNLOAD;
+    Get3DProperty.bSet                  = FALSE;
+    Get3DProperty.CustomValueSize       = 0;
+    Get3DProperty.pCustomValue          = NULL;
+    Get3DProperty.ApplicationName       = (char *)pAppName;
+    Get3DProperty.ApplicationNameLength = (int8_t)strlen(pAppName);
+    Get3DProperty.ValueType             = CTL_PROPERTY_VALUE_TYPE_BOOL;
+    Get3DProperty.Version               = 0;
+
+    Result = ctlGetSet3DFeature(hDevices, &Get3DProperty);
+    if (CTL_RESULT_SUCCESS != Result)
+    {
+        APP_LOG_ERROR("ctlGetSet3DFeature(Get PrebuiltShaderDownload) returned failure code: 0x%X", Result);
+        return Result; // feature not supported / not readable, nothing more to do
+    }
+
+    bool OriginalEnable = Get3DProperty.Value.BoolType.Enable;
+    APP_LOG_INFO("ctlGetSet3DFeature returned success(Get PrebuiltShaderDownload)");
+    APP_LOG_INFO(" Original Pre-built Shader Download (ShaderCache) Enable = %d", OriginalEnable);
+
+    // ---- Step 2: SET to the opposite value ----
+    bool TargetEnable                     = !OriginalEnable;
+    ctl_3d_feature_getset_t Set3DProperty = { 0 };
+    Set3DProperty.Size                    = sizeof(Set3DProperty);
+    Set3DProperty.FeatureType             = CTL_3D_FEATURE_PREBUILT_SHADER_DOWNLOAD;
+    Set3DProperty.bSet                    = TRUE;
+    Set3DProperty.CustomValueSize         = 0;
+    Set3DProperty.pCustomValue            = NULL;
+    Set3DProperty.ApplicationName         = (char *)pAppName;
+    Set3DProperty.ApplicationNameLength   = (int8_t)strlen(pAppName);
+    Set3DProperty.ValueType               = CTL_PROPERTY_VALUE_TYPE_BOOL;
+    Set3DProperty.Version                 = 0;
+    Set3DProperty.Value.BoolType.Enable   = TargetEnable;
+
+    Result = ctlGetSet3DFeature(hDevices, &Set3DProperty);
+    if (CTL_RESULT_SUCCESS != Result)
+    {
+        APP_LOG_ERROR("ctlGetSet3DFeature(Set PrebuiltShaderDownload to %d) returned failure code: 0x%X", TargetEnable, Result);
+        return Result;
+    }
+    APP_LOG_INFO("ctlGetSet3DFeature returned success(Set PrebuiltShaderDownload to %d)", TargetEnable);
+
+    // ---- Step 3: GET again to verify the toggle ----
+    ctl_3d_feature_getset_t Verify3DProperty  = { 0 };
+    Verify3DProperty.Size                     = sizeof(Verify3DProperty);
+    Verify3DProperty.FeatureType              = CTL_3D_FEATURE_PREBUILT_SHADER_DOWNLOAD;
+    Verify3DProperty.bSet                     = FALSE;
+    Verify3DProperty.CustomValueSize          = 0;
+    Verify3DProperty.pCustomValue             = NULL;
+    Verify3DProperty.ApplicationName          = (char *)pAppName;
+    Verify3DProperty.ApplicationNameLength    = (int8_t)strlen(pAppName);
+    Verify3DProperty.ValueType                = CTL_PROPERTY_VALUE_TYPE_BOOL;
+    Verify3DProperty.Version                  = 0;
+
+    Result = ctlGetSet3DFeature(hDevices, &Verify3DProperty);
+    if (CTL_RESULT_SUCCESS != Result)
+    {
+        APP_LOG_ERROR("ctlGetSet3DFeature(Get-after-Set PrebuiltShaderDownload) returned failure code: 0x%X", Result);
+    }
+    else
+    {
+        APP_LOG_INFO(" After SET, Pre-built Shader Download (ShaderCache) Enable = %d (expected %d)", Verify3DProperty.Value.BoolType.Enable, TargetEnable);
+        if (Verify3DProperty.Value.BoolType.Enable == TargetEnable)
+            APP_LOG_INFO(" SET verification PASSED");
+        else
+            APP_LOG_ERROR(" SET verification FAILED: value did not change as expected");
+    }
+
+    // ---- Manual cross-check with IGS UI ----
+    // Pause here so the tester can switch to Intel Graphics Software and visually
+    // confirm the "Pre-compiled Shader Download" toggle moved in sync.
+    APP_LOG_WARN("=====================================================================");
+    APP_LOG_WARN(" MANUAL CHECK: open Intel Graphics Software (IGS) now.");
+    APP_LOG_WARN(" The 'Pre-compiled Shader Download' toggle should currently be %s.", TargetEnable ? "ON (1)" : "OFF (0)");
+    APP_LOG_WARN(" Confirm the UI toggle matches, then press any key here to restore...");
+    APP_LOG_WARN("=====================================================================");
+    fflush(stdout);
+    (void)_getch();
+
+    // ---- Step 4: Restore the original value ----
+    Set3DProperty.bSet                  = TRUE;
+    Set3DProperty.Value.BoolType.Enable = OriginalEnable;
+    ctl_result_t RestoreResult          = ctlGetSet3DFeature(hDevices, &Set3DProperty);
+    if (CTL_RESULT_SUCCESS != RestoreResult)
+    {
+        APP_LOG_ERROR("ctlGetSet3DFeature(Restore PrebuiltShaderDownload to %d) returned failure code: 0x%X", OriginalEnable, RestoreResult);
+    }
+    else
+    {
+        APP_LOG_INFO("ctlGetSet3DFeature returned success(Restored PrebuiltShaderDownload to original %d)", OriginalEnable);
+    }
+
+    return Result;
+}
+
 int main()
 {
     ctl_result_t Result = CTL_RESULT_SUCCESS;
@@ -1456,8 +1577,16 @@ int main()
                 }
                 STORE_RESET_ERROR(Result);
 
-                // Test eventing
-                CtlTestEvents(hDevices[0]); // for now just first adapter!
+                Result = CtlTestPrebuiltShaderDownload(hDevices[Index]);
+                if (CTL_RESULT_SUCCESS != Result)
+                {
+                    APP_LOG_ERROR("CtlTestPrebuiltShaderDownload failure code: 0x%X", Result);
+                }
+                STORE_RESET_ERROR(Result);
+
+                // Test eventing (interactive: waits for a keypress). Disabled so the
+                // test app runs unattended and always produces a complete debug log.
+                // CtlTestEvents(hDevices[0]); // for now just first adapter!
             }
         }
     }
